@@ -1,16 +1,13 @@
 # Importamos las bibliotecas necesarias
-# Primero necesitarás instalar estas bibliotecas usando pip:
-# pip install pdf2image tkinter pillow
-# También necesitarás instalar poppler-utils:
-# En Windows: https://github.com/oschwartz10612/poppler-windows/releases/
-# En Linux: sudo apt-get install poppler-utils
-# En Mac: brew install poppler
+# Solo necesitas instalar estas bibliotecas usando pip:
+# pip install tkinter pillow PyMuPDF
 
 import tkinter as tk
 from tkinter import filedialog, messagebox
-from pdf2image import convert_from_path
-import os
+import fitz  # PyMuPDF
 from PIL import Image
+import os
+import io
 
 class ConvertidorPDFaPNG:
     def __init__(self):
@@ -22,7 +19,7 @@ class ConvertidorPDFaPNG:
         # Variables para almacenar las rutas
         self.carpeta_entrada = tk.StringVar()
         self.carpeta_salida = tk.StringVar()
-        self.calidad = tk.IntVar(value=100)  # Valor predeterminado de calidad
+        self.dpi = tk.IntVar(value=300)  # Valor predeterminado de DPI
         
         # Crear la interfaz
         self.crear_interfaz()
@@ -53,13 +50,13 @@ class ConvertidorPDFaPNG:
         tk.Entry(frame_salida, textvariable=self.carpeta_salida, width=50).pack(side='left', padx=5)
         tk.Button(frame_salida, text="Buscar", command=self.seleccionar_salida).pack(side='left')
         
-        # Control de calidad
-        frame_calidad = tk.Frame(marco)
-        frame_calidad.pack(fill='x', pady=10)
+        # Control de DPI (calidad)
+        frame_dpi = tk.Frame(marco)
+        frame_dpi.pack(fill='x', pady=10)
         
-        tk.Label(frame_calidad, text="Calidad de imagen (1-100):").pack(side='left')
-        tk.Scale(frame_calidad, from_=1, to=100, orient='horizontal', 
-                variable=self.calidad, length=200).pack(side='left', padx=5)
+        tk.Label(frame_dpi, text="Calidad (DPI: 72-600):").pack(side='left')
+        tk.Scale(frame_dpi, from_=72, to=600, orient='horizontal', 
+                variable=self.dpi, length=200).pack(side='left', padx=5)
         
         # Botón de conversión
         tk.Button(marco, text="Convertir PDFs", command=self.convertir_pdfs,
@@ -70,7 +67,10 @@ class ConvertidorPDFaPNG:
         Instrucciones:
         1. Seleccione la carpeta que contiene los archivos PDF
         2. Seleccione la carpeta donde desea guardar las imágenes PNG
-        3. Ajuste la calidad de la imagen (mayor número = mejor calidad)
+        3. Ajuste la calidad (DPI) - valores más altos = mejor calidad
+           - 72 DPI: calidad web básica
+           - 300 DPI: calidad de impresión estándar
+           - 600 DPI: alta calidad
         4. Haga clic en 'Convertir PDFs'
         """
         tk.Label(marco, text=instrucciones, justify='left').pack(pady=10)
@@ -102,26 +102,39 @@ class ConvertidorPDFaPNG:
                 messagebox.showinfo("Información", "No se encontraron archivos PDF en la carpeta seleccionada")
                 return
 
+            # Calcular el zoom basado en los DPI (72 DPI es el valor base)
+            zoom = self.dpi.get() / 72.0
+
             for pdf in pdfs:
                 # Ruta completa del archivo PDF
                 pdf_path = os.path.join(self.carpeta_entrada.get(), pdf)
                 
-                # Convertir PDF a imágenes
-                imagenes = convert_from_path(pdf_path)
+                # Abrir el PDF
+                doc = fitz.open(pdf_path)
                 
-                # Nombre base para los archivos PNG
-                nombre_base = os.path.splitext(pdf)[0]
-                
-                # Guardar cada página como PNG
-                for i, imagen in enumerate(imagenes):
+                # Convertir cada página
+                for pagina_num in range(len(doc)):
+                    pagina = doc[pagina_num]
+                    
+                    # Renderizar página a imagen
+                    mat = fitz.Matrix(zoom, zoom)
+                    pix = pagina.get_pixmap(matrix=mat)
+                    
+                    # Convertir a imagen PIL
+                    img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+                    
                     # Crear nombre del archivo de salida
+                    nombre_base = os.path.splitext(pdf)[0]
                     png_path = os.path.join(
                         self.carpeta_salida.get(), 
-                        f"{nombre_base}_pagina_{i+1}.png"
+                        f"{nombre_base}_pagina_{pagina_num + 1}.png"
                     )
                     
-                    # Guardar la imagen con la calidad especificada
-                    imagen.save(png_path, "PNG", quality=self.calidad.get())
+                    # Guardar como PNG
+                    img.save(png_path, "PNG")
+                
+                # Cerrar el documento
+                doc.close()
             
             messagebox.showinfo("Éxito", "¡Conversión completada!")
             
